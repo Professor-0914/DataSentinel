@@ -8,6 +8,7 @@ Agents:
   2. AnomalyAgent   — detects data quality issues (nulls, spikes, schema drift)
   3. DiagnosticAgent— calls Claude LLM to explain root cause & suggest fixes
   4. HealerAgent    — auto-patches issues and logs remediation actions
+  + Foundry IQ     — knowledge retrieval layer for grounded, cited fixes
 
 Run:
   pip install streamlit yfinance pandas plotly anthropic
@@ -22,6 +23,60 @@ import anthropic
 import time
 import random
 from datetime import datetime, timedelta
+
+# ─── Foundry IQ Knowledge Base ───────────────────────────────────────────────
+# Simulates Microsoft Foundry IQ — grounded knowledge retrieval with citations
+FOUNDRY_IQ_KB = {
+    "NULL_FLOOD": {
+        "title": "Null Flood — Upstream API Timeout Pattern",
+        "source": "Foundry IQ / Pipeline Reliability Runbook v2.1",
+        "root_cause": "Upstream data provider returned empty payload due to rate-limit or timeout.",
+        "immediate_fix": "Apply forward-fill (ffill) with max 2 periods to preserve signal continuity.",
+        "prevention": "Add exponential backoff retry (3 attempts) + circuit breaker at ingest layer.",
+        "confidence": 0.94,
+        "tags": ["data-quality", "ingest", "reliability"],
+    },
+    "PRICE_SPIKE": {
+        "title": "Price Spike — Bad Tick / After-Hours Bleed",
+        "source": "Foundry IQ / Market Data Quality Standards v1.8",
+        "root_cause": "Bad tick data or after-hours trade bleed causing z-score outlier in Close price.",
+        "immediate_fix": "Clip values beyond μ±4σ of rolling 20-period window.",
+        "prevention": "Add pre-market/after-hours filter + cross-validate against VWAP.",
+        "confidence": 0.91,
+        "tags": ["anomaly", "market-data", "outlier"],
+    },
+    "SCHEMA_DRIFT": {
+        "title": "Schema Drift — Provider Column Rename",
+        "source": "Foundry IQ / Schema Governance Policy v3.0",
+        "root_cause": "Data provider updated API response schema without versioning notice.",
+        "immediate_fix": "Apply column normaliser mapping: close_price→Close, vol→Volume.",
+        "prevention": "Implement schema contract tests (Great Expectations) in CI/CD pipeline.",
+        "confidence": 0.97,
+        "tags": ["schema", "governance", "drift"],
+    },
+    "STALE_DATA": {
+        "title": "Stale Data — Feed Connection Drop",
+        "source": "Foundry IQ / Real-Time Feed SLA Handbook v1.3",
+        "root_cause": "WebSocket feed dropped and replayed last known record instead of reconnecting.",
+        "immediate_fix": "Flag records with max-age TTL > 15 min; trigger upstream reconnect.",
+        "prevention": "Add heartbeat monitor with auto-reconnect and Slack/PagerDuty alert.",
+        "confidence": 0.88,
+        "tags": ["freshness", "streaming", "sla"],
+    },
+    "NEGATIVE_VOLUME": {
+        "title": "Negative Volume — Short Interest Encoding Bug",
+        "source": "Foundry IQ / Financial Data Encoding Standards v2.5",
+        "root_cause": "Short interest data incorrectly merged into Volume field with sign inversion.",
+        "immediate_fix": "Apply abs() transform to Volume; flag affected rows for audit.",
+        "prevention": "Add schema-level constraint: Volume >= 0 with pre-load validation.",
+        "confidence": 0.85,
+        "tags": ["data-quality", "volume", "encoding"],
+    },
+}
+
+def query_foundry_iq(anomaly_type: str) -> dict | None:
+    """Simulate Foundry IQ knowledge retrieval — returns grounded, cited fix."""
+    return FOUNDRY_IQ_KB.get(anomaly_type, None)
 
 # ─── Page config ────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -668,6 +723,27 @@ def render_dashboard():
                     f'<div class="log-line ok">✅ {action}</div>',
                     unsafe_allow_html=True
                 )
+
+        # ── Foundry IQ Knowledge Panel ───────────────────────────────────────
+        st.markdown("#### 🔍 Foundry IQ Knowledge Retrieval")
+        if st.session_state.anomalies:
+            for a in st.session_state.anomalies:
+                kb = query_foundry_iq(a["type"])
+                if kb:
+                    confidence_color = "#3fb950" if kb["confidence"] > 0.9 else "#d29922"
+                    tags_html = " ".join([f'<span style="background:#21262d;color:#8b949e;padding:2px 8px;border-radius:12px;font-size:0.7rem;font-family:IBM Plex Mono,monospace">{t}</span>' for t in kb["tags"]])
+                    st.markdown(f"""
+                    <div style="background:#161b22;border:1px solid #388bfd;border-radius:8px;padding:14px;margin-bottom:10px">
+                      <div style="font-family:IBM Plex Mono,monospace;color:#58a6ff;font-size:0.8rem;font-weight:600">📚 {kb['title']}</div>
+                      <div style="color:#8b949e;font-size:0.72rem;margin:4px 0">Source: <span style="color:#bc8cff">{kb['source']}</span> &nbsp;|&nbsp; Confidence: <span style="color:{confidence_color}">{kb['confidence']*100:.0f}%</span></div>
+                      <div style="margin-top:8px;font-size:0.78rem;color:#c9d1d9"><b style="color:#d29922">Root cause:</b> {kb['root_cause']}</div>
+                      <div style="margin-top:4px;font-size:0.78rem;color:#c9d1d9"><b style="color:#3fb950">Fix:</b> {kb['immediate_fix']}</div>
+                      <div style="margin-top:4px;font-size:0.78rem;color:#c9d1d9"><b style="color:#58a6ff">Prevention:</b> {kb['prevention']}</div>
+                      <div style="margin-top:8px">{tags_html}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="log-line ok">✅ No anomalies — Foundry IQ knowledge base on standby</div>', unsafe_allow_html=True)
 
 
 # ─── Run on button press or auto-loop ────────────────────────────────────────
