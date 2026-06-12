@@ -1,6 +1,6 @@
 # 🛡️ DataSentinel
 ### 4-Agent Real-Time Data Pipeline Health Monitor
-**Agents League Hackathon 2026 — Creative Apps Track**
+**Agents League Hackathon 2026 — Reasoning Agents Track**
 
 ---
 
